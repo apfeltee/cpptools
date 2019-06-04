@@ -33,12 +33,13 @@ class RmCPP
     @opts = opts
     @outfile = opts.outfile
     @idx = 0
+    @line = 1
     @curch = nil
     @nextch = nil
     @prevch = nil
     @instring = false
     @waseol = false
-    @strchar = nil
+    @strbegin = nil
   end
 
   def out(*vals)
@@ -47,6 +48,21 @@ class RmCPP
         @outfile.write(val)
       end
     end
+  end
+
+  # read more;
+  #  set @prevch to the value that was @curch
+  #  set @curch to the current char
+  #  @nextch peeks to the next char
+  # also increases @line incase of EOL
+  def more(fh)
+    @prevch = @curch
+    @curch = Utils.readchar(fh)
+    @nextch = Utils.fpeek(fh)
+    if (@nextch == "\n") then
+      @line += 1
+    end
+    return @curch
   end
 
   def out_if_keep_ansi
@@ -63,6 +79,10 @@ class RmCPP
 
   def check_is_eol_or_whitespace(ch)
     return (
+      # these account for the beginning of the file
+      # if nothing was read yet, @idx will be 0
+      (@idx == 0)
+      # whitespace
       (ch == " ") ||
       (ch == "\n") ||
       (ch == "\t")
@@ -73,11 +93,11 @@ class RmCPP
     return check_is_eol_or_whitespace(@prevch)
   end
 
-  def more(fh)
-    @prevch = @curch
-    @curch = Utils.readchar(fh)
-    @nextch = Utils.fpeek(fh)
-    return @curch
+  def isdel(s)
+    if @opts.deleteme.include?(s) then
+      return true
+    end
+    return false
   end
 
   def do_handle(infh)
@@ -86,19 +106,22 @@ class RmCPP
       if @curch == nil then
         return
       else
-        if ((@curch == '"') || (@curch == "'")) && (@prevch != '\\') then
+        if (((@curch == '"') || (@curch == "'")) && (@prevch != '\\')) && (@strbegin != nil) then
           # only toggle if it matches string character
           # i.e., "'" would not terminate '"', and vice versa
-          if (@instring == true) && (@curch == @strchar) then
+          if @instring && (@curch == @strbegin) then
             @instring = false
+            # also unset @strbegin - this takes care of stuff like "'blah'" and '"foo"'
+            # which would otherwise be ambigious
+            @strbegin = nil
           else
-            @strchar = @curch
+            @strbegin = @curch
             @instring = true
           end
           out(@curch)
         # ANSI C comment "/* blah blah */"
         # just keep eating until "*/"
-        elsif ((@curch == '/') && (@nextch == '*') && (@instring == false)) then
+        elsif (((@curch == '/') && (@nextch == '*')) && (not @instring)) then
           while true do
             more(infh)
             out_if_keep_ansi
@@ -109,7 +132,8 @@ class RmCPP
             end
           end
         # C++ comment "// blah blah"
-        elsif ((@curch == '/') && (@nextch == '/') && (((@idx == 0) || was_eol_or_whitespace) && (@instring == false))) then
+        # keep eating until EOL
+        elsif (((@curch == '/') && (@nextch == '/')) && (was_eol_or_whitespace && (not @instring))) then
           while true do
             more(infh)
             out_if_keep_cplusplus
@@ -118,9 +142,11 @@ class RmCPP
               break
             end
           end
-          # preprocessor
-        elsif ((@curch == '#') && (((@idx == 0) || was_eol_or_whitespace) && (@instring == false))) then
+        # preprocessor
+        elsif ((@curch == '#') && (was_eol_or_whitespace && (not @instring)))
+          # buffer for preprocessor name ("include", "define", etc)
           cppword = []
+          # build buffer, in case a preprocessor line needs to be discarded
           buffer = []
           skipcpp = false
           endofcpp = false
@@ -129,22 +155,19 @@ class RmCPP
           end
           while true do
             more(infh)
-            if @opts.delete_includes then
-              if check_is_eol_or_whitespace(@curch) || (not @curch.match?(/^[a-z]$/i)) then
-                if not cppword.empty? then
-                  sword = cppword.join.downcase
-                  cppword = []
-                  # if delete_includes is specified, then '#include's will be filtered here
-                  if sword == "include" then
-                    skipcpp = true
-                    buffer = []
-                  end
+            if check_is_eol_or_whitespace(@curch) || (not @curch.match?(/^[a-z]$/i)) then
+              if not cppword.empty? then
+                sw = cppword.join.downcase
+                cppword = []
+                if isdel(sw) then
+                  skipcpp = true
+                  buffer = []
                 end
-              else
-                cppword.push(@curch)
               end
+            else
+              cppword.push(@curch)
             end
-            if (@opts.delete_preprocessor == false) && (skipcpp == false) then
+            if (not @opts.delete_preprocessor) && (not skipcpp) then
               buffer.push(@curch)
             end
             if ((@curch == "\n") && (@prevch != '\\')) then
@@ -153,7 +176,7 @@ class RmCPP
             # finally, once all of the line(s) are consumed, print out buffer (unless specified otherwise)
             # and continue with the other tasks
             if endofcpp then
-              if skipcpp == false then
+              if not skipcpp then
                 out(*buffer)
               end
               break
@@ -162,7 +185,7 @@ class RmCPP
         else
           if @opts.ignorecommentlines.length > 0 then
             @opts.ignorecommentlines.each do |pat|
-              
+              # todo
             end
           end
           out(@curch)
@@ -183,14 +206,14 @@ begin
   $stdout.sync = true
   opts = OpenStruct.new({
     delete_preprocessor: false,
-    delete_includes: false,
+    deleteme: [],
     keep_ansicomment: false,
     keep_cplusplus: false,
     have_outfile: false,
     outfile: $stdout,
     ignorecommentlines: [],
   })
-  OptionParser.new{|prs|
+  (prs=OptionParser.new{|prs|
     prs.on("-h", "--help", "show this help and exit"){
       puts(prs.help)
       exit(0)
@@ -215,14 +238,19 @@ begin
       opts.keep_ansicomment = true
     }
     prs.on("-i", "--delete-includes", "delete #include statements"){
-      opts.delete_includes = true
+      opts.deleteme.push("include")
     }
-  }.parse!
+    prs.on("-x<stmt>", "--delete=<stmt>", "delete #<stmt> statements (may be comma separated)"){|v|
+      all = v.to_s.split(",").map{|s| s.strip.downcase }.reject(&:empty?)
+      opts.deleteme.push(*all)
+    }
+  }).parse!
   begin
     rmc = RmCPP.new(opts)
     if ARGV.empty? then
       if $stdin.tty? then
-        $stderr.printf("usage: rmcpp [<options>] <file> ...\n")
+        $stderr.printf("need some files here!\n")
+        $stderr.puts(prs.help)
         exit(1)
       else
         rmc.do_handle($stdin)
