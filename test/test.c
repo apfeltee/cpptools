@@ -1,5 +1,11 @@
 
-/* this is a test file for cppunc - it's ****not**** supposed to make sense. */
+// im a c++ comment!
+
+int this_is_visible = "hey there";
+
+fuck = "i use escapes \"to embed quotes\". scary!";
+
+/* this is a test file for rmcpp - it's ****not**** supposed to make sense. */
 
 /* SHOULD BE REMOVED */
 #include \
@@ -8,12 +14,12 @@
 
 static const short quantum_count;
 
-/* SHOULD BE REMOVED */
+/* SHOULD BE REMOVED /* <-- should not confuse the parser */
 #pragma quantum_count ( this is\
-    probably \
+    probably /* hi im a comment */ \
         not \
                 how \
-                    this dir \
+                    /* im also a comment! */this directive \
                         works but idgaf)
 
 struct dumb {
@@ -32,6 +38,18 @@ const char bighuge[(int)2e935] = {255};
 your \
                                     stuff\
                                     is\
-        broken
+        broken /* another comment? */
+
+    string[] array = queryRepresentation.Trim(new char[]
+    {
+        '\\'
+    }).Split(new char[]
+    {
+        '\\'
+    });
 
 static const struct dumb hugeness;
+
+char this_is_the_end_of_this_file = true;
+
+
