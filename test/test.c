@@ -42,14 +42,36 @@ your \
 
     string[] array = queryRepresentation.Trim(new char[]
     {
-        '\\'
+        '\\' /* test 1 */
     }).Split(new char[]
     {
-        '\\'
+        '\\' /* test 2 */
     });
 
 static const struct dumb hugeness;
 
 char this_is_the_end_of_this_file = true;
 
+blah = '" am i broken?"'; /* am i???? */
+poop = 'are "you \"broken"?\"'; /* well? */
 
+      int needQuote;
+        char ch;
+        char q = ((xtype==etSQLESCAPE3)?'"':'\'');   /* Quote character */
+        ...
+        if( isnull ) escarg = (xtype==etSQLESCAPE2 ? "NULL" : "(NULL)");
+        /* For %q, %Q, and %w, the precision is the number of byte (or
+        ** ...
+        ** ...
+        */
+
+    case ' ': /* space */
+    case '\r': /* cr */
+    case '\t': /* tab */
+    case '\n': /* linefeed */
+    case '\f': /* formfeed */
+    {
+        /* White space is ignored */
+        token = tkWS;
+        break;
+    }

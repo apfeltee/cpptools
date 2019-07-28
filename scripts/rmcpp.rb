@@ -40,12 +40,17 @@ class RmCPP
     @prevch = nil
     @havemore = true
     @state = nil
+    @callback = nil
   end
 
   def out(*vals)
     vals.each do |val|
       if val != nil then
-        @outfile.write(val)
+        if @callback != nil then
+          @callback.call(val)
+        else
+          @outfile.write(val)
+        end
       end
     end
   end
@@ -112,29 +117,37 @@ class RmCPP
   end
 
   def isdel(s)
-    #$stderr.printf("isdel(%p)\n", s)
     if @opts.deleteme.include?(s) then
       return true
     end
     return false
   end
 
+  def dumpinfo(fn)
+    $stderr.printf("%s: curch=%p, prevch=%p, nextch=%p\n", fn, @curch, @prevch, @nextch)
+  end
+
   def do_stringliteral
-    endch = ( if @state == :quotstring then '"' else "'" end);
-    #endch = @prevch.dup
+    #endch = ( if @state == :quotstring then '"' else "'" end);
+    endch = @prevch.dup
     while @havemore do
       out(@curch)
-      # silly hack - process "\\" (double escapes)
-      # these are surprisingly often overlooked...
-      if (@curch == "\\") && (@nextch == "\\") then
-        more()
-        out(@curch)
-      end
       if (@curch == endch) then
-        break
+        return
+      else
+        # this is stupid.
+        if (@curch == "\\") then
+          while @havemore do
+            more()
+            out(@curch)
+            if (@nextch != "\\")  
+              break
+            end
+          end
+        end
       end
       more()
-    end
+    end #while
   end
 
   def do_commentblock
